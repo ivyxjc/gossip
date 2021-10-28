@@ -5,6 +5,11 @@ import (
 	"net"
 )
 
+// ping request sent directly to node
+type ping struct {
+	SeqNo int
+}
+
 func (m *MemberList) tcpListen() {
 	for {
 		conn, err := m.tcpListener.AcceptTCP()
