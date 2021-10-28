@@ -1,3 +1,3 @@
-module github.com/ivyxjc/p2p
+module github.com/ivyxjc/gossip
 
 go 1.17
