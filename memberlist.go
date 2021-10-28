@@ -138,3 +138,10 @@ func (m *Memberlist) NotifyFail(ch chan<- net.Addr) {
 	}
 	m.notifyFail = append(m.notifyFail, ch)
 }
+
+func (m *Memberlist) Shutdown() error {
+	m.deSchedule()
+	m.udpListener.Close()
+	m.tcpListener.Close()
+	return nil
+}

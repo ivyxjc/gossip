@@ -3,9 +3,11 @@ package p2p
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"log"
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -22,6 +24,22 @@ const (
 	udpBufSize = 65536
 	udpSendBuf = 1500
 )
+
+// pushPullHeader is used to inform the
+// other side how many states we are transferring
+type pushPullHeader struct {
+	Nodes int
+}
+
+// pushNodeState is used for pushPullReq when we are
+// transferring out node states
+type pushNodeState struct {
+	Name        string
+	Addr        []byte
+	Incarnation int
+	State       int
+	StateChange time.Time
+}
 
 // ping request sent directly to node
 type ping struct {
@@ -136,6 +154,63 @@ func (m *Memberlist) encodeAndSendMsg(to net.Addr, msgType int, msg interface{})
 }
 
 func (m *Memberlist) handleConnection(conn *net.TCPConn) {
+	defer conn.Close()
+
+	var msgType uint32
+	if err := binary.Read(conn, binary.BigEndian, &msgType); err != nil {
+		log.Fatalf("[ERR] Failed to read msg type type: %s", err)
+		return
+	}
+
+	if msgType != pushPullMsg {
+		log.Printf("[ERR] Invalid TCP request type (%d)", msgType)
+		return
+	}
+
+	var header pushPullHeader
+	dec := gob.NewDecoder(conn)
+	if err := dec.Decode(&header); err != nil {
+		log.Printf("[ERR] Failed to decode push/pull header: %s", err)
+		return
+	}
+
+	remoteNodes := make([]pushNodeState, header.Nodes)
+
+	for i := 0; i < header.Nodes; i++ {
+		if err := dec.Decode(&remoteNodes[i]); err != nil {
+			log.Printf("[ERR] Failed to decode Push/Pull state (idx: %d /%d): %s", i, header.Nodes, err)
+			return
+		}
+	}
+	m.nodeLock.RLock()
+	localNodes := make([]pushNodeState, len(m.nodes))
+	for i, n := range m.nodes {
+		localNodes[i].Name = n.Name
+		localNodes[i].Addr = n.Addr
+		localNodes[i].Incarnation = n.Incarnation
+		localNodes[i].State = n.State
+		localNodes[i].StateChange = n.StateChange
+	}
+	m.nodeLock.RUnlock()
+
+	header.Nodes = len(localNodes)
+	enc := gob.NewEncoder(conn)
+
+	binary.Write(conn, binary.BigEndian, uint32(pushPullMsg))
+	if err := enc.Encode(&header); err != nil {
+		log.Printf("[ERR] Failed to send Push/Pull header: %+v", err)
+		goto AfterSend
+	}
+
+	for i := 0; i < header.Nodes; i++ {
+		if err := enc.Encode(&localNodes[i]); err != nil {
+			log.Printf("[ERR] Failed to send Push/Pull state (idx: %d / %d): %+v", i, header.Nodes, err)
+			goto AfterSend
+		}
+	}
+AfterSend:
+	m.mergeState(remoteNodes)
+
 }
 
 func (m *Memberlist) handlePing(buf []byte, from net.Addr) {
@@ -166,7 +241,7 @@ func (m *Memberlist) handleIndirectPing(buf []byte, from net.Addr) {
 
 	respHandler := func() {
 		ack := ackResp{ind.SeqNo}
-		if err := m.encodeAndSendMsg(destAddr, ackRespMsg, &ack); err != nil {
+		if err := m.encodeAndSendMsg(from, ackRespMsg, &ack); err != nil {
 			log.Printf("[ERR] Failed to forward ack: %+v", err)
 		}
 	}
@@ -178,20 +253,32 @@ func (m *Memberlist) handleIndirectPing(buf []byte, from net.Addr) {
 
 func (m *Memberlist) handleAck(buf []byte, from net.Addr) {
 	var ack ackResp
-	if err := decode(buf, ack); err != nil {
+	if err := decode(buf, &ack); err != nil {
 		log.Printf("[ERR] Failed to deocde ack response: %s", err)
 	}
 	m.invokeAckHandler(ack.SeqNo)
 }
 
 func (m *Memberlist) handleSuspect(buf []byte, from net.Addr) {
-
+	var sus suspect
+	if err := decode(buf, &sus); err != nil {
+		log.Printf("[ERR] Failed to deocde suspect message: %s", err)
+	}
+	m.suspectNode(&sus)
 }
 
 func (m *Memberlist) handleAlive(buf []byte, from net.Addr) {
-
+	var alive alive
+	if err := decode(buf, &alive); err != nil {
+		log.Printf("[ERR] Failed to deocde alive message: %s", err)
+	}
+	m.aliveNode(&alive)
 }
 
 func (m *Memberlist) handleDead(buf []byte, from net.Addr) {
-
+	var dead dead
+	if err := decode(buf, &dead); err != nil {
+		log.Printf("[ERR] Failed to deocde dead message: %s", err)
+	}
+	m.deadNode(&dead)
 }

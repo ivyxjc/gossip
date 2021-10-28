@@ -5,9 +5,15 @@ import (
 	"time"
 )
 
+const (
+	StateAlive = iota
+	StateSuspect
+	StateDead
+)
+
 type Node struct {
 	Name string
-	Addr net.Addr
+	Addr net.IP
 }
 
 type NodeState struct {
@@ -74,5 +80,17 @@ func (m *Memberlist) invokeAckHandler(seqNo uint32) {
 	}
 	ah.timer.Stop()
 	ah.handler()
+}
+
+func (m *Memberlist) aliveNode(a *alive) {
+}
+
+func (m *Memberlist) suspectNode(s *suspect) {
+}
+
+func (m *Memberlist) deadNode(d *dead) {
+}
+
+func (m *Memberlist) mergeState(remote []pushNodeState) {
 
 }
