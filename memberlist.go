@@ -33,8 +33,8 @@ type Memberlist struct {
 	notifyLeave []chan<- net.Addr
 	notifyFail  []chan<- net.Addr
 
-	sequenceNum int
-	incarnation int
+	sequenceNum uint32
+	incarnation uint32
 
 	nodeLock sync.RWMutex
 	nodes    []*NodeState
@@ -43,6 +43,9 @@ type Memberlist struct {
 	tickerLock sync.Mutex
 	ticker     *time.Ticker
 	stopTick   chan struct{}
+
+	ackLock     sync.Mutex
+	ackHandlers map[uint32]*ackHandler
 }
 
 func DefaultConfig() *Config {
@@ -83,6 +86,7 @@ func newMemberList(conf *Config) (*Memberlist, error) {
 		udpListener: udpLn.(*net.UDPConn),
 		nodeMap:     make(map[string]*NodeState),
 		stopTick:    make(chan struct{}),
+		ackHandlers: make(map[uint32]*ackHandler),
 	}
 	go m.tcpListen()
 	go m.udpListen()

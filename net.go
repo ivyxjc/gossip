@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
+	"sync/atomic"
 )
 
 const (
@@ -24,35 +25,39 @@ const (
 
 // ping request sent directly to node
 type ping struct {
-	SeqNo int
+	SeqNo uint32
 }
 
 type indirectPingReq struct {
-	SeqNo  int
-	Target string
+	SeqNo  uint32
+	Target []byte
 }
 
 // ack response is sent for a ping
 type ackResp struct {
-	SeqNo int
+	SeqNo uint32
 }
 
 // suspect is broadcast when we suspect a node is dead
 type suspect struct {
-	Incarnation int
+	Incarnation uint32
 	Node        string
 }
 
 // alive is broadcast when we  know a node is alive
 type alive struct {
-	Incarnation int
+	Incarnation uint32
 	Node        string
 }
 
 // dead is broadcast when we confirm a node is dead
 type dead struct {
-	Incarnation int
+	Incarnation uint32
 	Node        string
+}
+
+func (m *Memberlist) nextSeqNo() uint32 {
+	return atomic.AddUint32(&m.sequenceNum, 1)
 }
 
 func (m *Memberlist) tcpListen() {
@@ -119,6 +124,17 @@ func (m *Memberlist) sendMsg(to net.Addr, msg *bytes.Buffer) error {
 	return err
 }
 
+func (m *Memberlist) encodeAndSendMsg(to net.Addr, msgType int, msg interface{}) error {
+	out, err := encode(msgType, msg)
+	if err != nil {
+		return err
+	}
+	if err := m.sendMsg(to, out); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (m *Memberlist) handleConnection(conn *net.TCPConn) {
 }
 
@@ -138,11 +154,34 @@ func (m *Memberlist) handlePing(buf []byte, from net.Addr) {
 }
 
 func (m *Memberlist) handleIndirectPing(buf []byte, from net.Addr) {
+	var ind indirectPingReq
+	if err := decode(buf, &ind); err != nil {
+		log.Printf("[ERR] Fail to decode indirect ping request: %s", err)
+	}
+	// Send a ping to the correct host
+	localSeqNo := m.nextSeqNo()
+	ping := ping{SeqNo: localSeqNo}
+	// todo  Port should be in udp packet
+	destAddr := &net.UDPAddr{IP: ind.Target, Port: m.config.UDPPort}
 
+	respHandler := func() {
+		ack := ackResp{ind.SeqNo}
+		if err := m.encodeAndSendMsg(destAddr, ackRespMsg, &ack); err != nil {
+			log.Printf("[ERR] Failed to forward ack: %+v", err)
+		}
+	}
+	m.setAckHandler(localSeqNo, respHandler, m.config.RTT)
+	if err := m.encodeAndSendMsg(destAddr, pingMsg, &ping); err != nil {
+		log.Printf("[ERR] Failed to send ping: %+v", err)
+	}
 }
 
 func (m *Memberlist) handleAck(buf []byte, from net.Addr) {
-
+	var ack ackResp
+	if err := decode(buf, ack); err != nil {
+		log.Printf("[ERR] Failed to deocde ack response: %s", err)
+	}
+	m.invokeAckHandler(ack.SeqNo)
 }
 
 func (m *Memberlist) handleSuspect(buf []byte, from net.Addr) {
