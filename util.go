@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/gob"
 	"net"
 )
@@ -30,8 +31,11 @@ func decode(buf []byte, out interface{}) error {
 	return dec.Decode(out)
 }
 
-func encode(in interface{}) (*bytes.Buffer, error) {
+func encode(msgType int, in interface{}) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
+	if err := binary.Write(buf, binary.BigEndian, uint32(msgType)); err != nil {
+		return nil, err
+	}
 	enc := gob.NewEncoder(buf)
 	err := enc.Encode(in)
 	return buf, err

@@ -17,7 +17,7 @@ type NodeState struct {
 	StateChange time.Time // Time last state change happened
 }
 
-func (m *MemberList) schedule() {
+func (m *Memberlist) schedule() {
 	m.tickerLock.Lock()
 	m.ticker = time.NewTicker(m.config.Interval)
 	C := m.ticker.C
@@ -34,7 +34,7 @@ func (m *MemberList) schedule() {
 	}()
 }
 
-func (m *MemberList) deSchedule() {
+func (m *Memberlist) deSchedule() {
 	m.tickerLock.Lock()
 	m.ticker.Stop()
 	m.ticker = nil
@@ -42,6 +42,6 @@ func (m *MemberList) deSchedule() {
 	m.stopTick <- struct{}{}
 }
 
-func (m *MemberList) tick() {
+func (m *Memberlist) tick() {
 
 }

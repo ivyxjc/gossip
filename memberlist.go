@@ -21,7 +21,7 @@ type Config struct {
 	Interval       time.Duration // Interval length
 }
 
-type MemberList struct {
+type Memberlist struct {
 	config *Config
 
 	tcpListener *net.TCPListener
@@ -62,7 +62,7 @@ func DefaultConfig() *Config {
 
 }
 
-func newMemberList(conf *Config) (*MemberList, error) {
+func newMemberList(conf *Config) (*Memberlist, error) {
 	tcpAddr := fmt.Sprintf("%s:%d", conf.BindAddr, conf.TCPPort)
 	tcpLn, err := net.Listen("tcp", tcpAddr)
 	if err != nil {
@@ -77,7 +77,7 @@ func newMemberList(conf *Config) (*MemberList, error) {
 		return nil, fmt.Errorf("fail to start UDP listener. Err: %s", err)
 	}
 
-	m := &MemberList{
+	m := &Memberlist{
 		config:      conf,
 		tcpListener: tcpLn.(*net.TCPListener),
 		udpListener: udpLn.(*net.UDPConn),
@@ -89,7 +89,7 @@ func newMemberList(conf *Config) (*MemberList, error) {
 	return m, nil
 }
 
-func Create(conf *Config) (*MemberList, error) {
+func Create(conf *Config) (*Memberlist, error) {
 	m, err := newMemberList(conf)
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func Create(conf *Config) (*MemberList, error) {
 	return m, nil
 }
 
-func Join(conf *Config) (*MemberList, error) {
+func Join(conf *Config) (*Memberlist, error) {
 	m, err := newMemberList(conf)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func Join(conf *Config) (*MemberList, error) {
 	return m, nil
 }
 
-func (m *MemberList) NotifyJoin(ch chan<- net.Addr) {
+func (m *Memberlist) NotifyJoin(ch chan<- net.Addr) {
 	m.notifyLock.Lock()
 	defer m.notifyLock.Unlock()
 	if channelIndex(m.notifyJoin, ch) >= 0 {
@@ -116,7 +116,7 @@ func (m *MemberList) NotifyJoin(ch chan<- net.Addr) {
 	m.notifyJoin = append(m.notifyJoin, ch)
 }
 
-func (m *MemberList) NotifyLeave(ch chan<- net.Addr) {
+func (m *Memberlist) NotifyLeave(ch chan<- net.Addr) {
 	m.notifyLock.Lock()
 	defer m.notifyLock.Unlock()
 	if channelIndex(m.notifyLeave, ch) >= 0 {
@@ -125,7 +125,7 @@ func (m *MemberList) NotifyLeave(ch chan<- net.Addr) {
 	m.notifyLeave = append(m.notifyLeave, ch)
 }
 
-func (m *MemberList) NotifyFail(ch chan<- net.Addr) {
+func (m *Memberlist) NotifyFail(ch chan<- net.Addr) {
 	m.notifyLock.Lock()
 	defer m.notifyLock.Unlock()
 
